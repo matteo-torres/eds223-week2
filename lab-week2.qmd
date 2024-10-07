@@ -1,0 +1,184 @@
+---
+title: "EDS 223: Week 2"
+format: html
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r}
+# Clear working environment
+rm(list = ls())
+```
+
+```{r}
+# Load packages
+library(sf) # For handling vector data
+library(tmap) # For making maps
+library(tidyverse) # Because we love the tidyverse
+library(spData) # Preloaded spatial data
+```
+
+## Simple features from scratch
+
+```{r}
+# Create st_point with longitude and latitude for London
+# Simple feature geometry
+london_point <- st_point(c(0.1, 51.5))
+
+# Add coordinate reference system
+# Simple feature collection
+london_geom <- st_sfc(london_point, crs = 4326)
+
+# Create data frame of attributes about London
+london_attrib <- data.frame(
+  name = "London",
+  temperature = 25,
+  date = as.Date("2017-06-21")
+  )
+
+# Combine geometry and data frame
+# Simple feature object
+london_sf <- st_sf(london_attrib, geometry = london_geom)
+
+# Check class
+class(london_sf)
+
+# Check CRS
+st_crs(london_sf)$IsGeographic
+```
+
+```{r}
+world <- spData::world
+
+names(world)
+summary(world$lifeExp)
+```
+
+```{r}
+# Drop the geom column and convert this sf object into a data frame
+world_df <- st_drop_geometry(world)
+
+class(world_df)
+```
+
+## Reprojecting data
+
+```{r}
+london_proj <- data.frame(x = 53000, y = 180000) %>%
+  st_as_sf(coords = c("x", "y"), crs = "EPSG:27700")
+
+st_crs(london_proj) == st_crs(london_sf)
+
+london_sf_transform <- st_transform(london_sf, crs = st_crs(london_proj))
+```
+
+```{r}
+if(st_crs(london_sf_transform) == st_crs(london_proj)) {
+  print("coordinate reference systems of datasets match")
+} else {
+  error("coodinate reference systems do not match")
+}
+```
+
+```{r}
+# Equal Earth is an equal-area pseudocylindrical projection (EPSG 8857)
+tm_shape(world, projection = 8857) +
+  tm_fill(col = "area_km2")
+```
+
+```{r}
+# Mercator is a conformal cylindrical map that preserves angles (EPSG 3395)
+tm_shape(world, projection = 3395) +
+  tm_fill(col = "area_km2")
+```
+
+## Vector attribute subsetting
+
+```{r}
+# Select columns
+world %>%
+  select(name_long, pop)
+```
+
+```{r}
+# Remove columns
+world %>%
+  select(-subregion, -area_km2)
+```
+
+```{r}
+# Select AND rename columns
+world %>%
+  select(name = name_long, population = pop)
+```
+
+```{r}
+# Filter observations based on variables
+world1 <- world %>%
+  filter(area_km2 < 10000)
+
+summary(world1$area_km2)
+```
+
+```{r}
+world %>%
+  filter(continent == "Asia") %>%
+  select(name_long, continent, lifeExp) %>%
+  slice_max(lifeExp) %>%
+  st_drop_geometry()
+```
+
+```{r}
+world %>%
+  group_by(continent) %>%
+  summarize(population = sum(pop, na.rm = TRUE)) %>%
+  st_drop_geometry()
+```
+
+## Joins with vector attributes
+
+```{r}
+coffee_data <- spData::coffee_data
+
+head(coffee_data)
+nrow(coffee_data)
+nrow(world)
+```
+
+```{r}
+world_coffee <- left_join(world, coffee_data, by = "name_long")
+```
+
+```{r}
+tm_shape(world_coffee) +
+  tm_fill(col = "coffee_production_2017",
+          title = "Coffee production (2017)")
+```
+
+```{r}
+world_coffee_inner <- inner_join(world, coffee_data, by = "name_long")
+
+if (nrow(world_coffee_inner) < nrow(coffee_data)) {
+  warning("inner join does not match original data. potential data loss during join")
+}
+```
+
+```{r}
+setdiff(coffee_data$name_long, world$name_long)
+```
+
+```{r}
+# Search for the DRC in the world dataset
+drc <- stringr::str_subset(world$name_long, "Dem*.+Congo")
+
+coffee_data$name_long[stringr::str_detect(coffee_data$name_long, "Congo")] <- drc
+```
+
+```{r}
+# Let’s visualize what a the inner join did to our spatial object
+tm_shape(world_coffee_inner) +
+  tm_polygons(fill = "coffee_production_2017",
+              title = "Coffee production (2017)") +
+  tm_layout(legend.outside = TRUE)
+```
+
